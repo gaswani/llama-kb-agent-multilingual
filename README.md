@@ -68,31 +68,37 @@ To fix that, the agent performs:
 
 ```mermaid
 flowchart LR
-    U["User / Portal / Mobile App"] -->|Text or Audio| A["Flask API + Web UI"]
+  U["User / Portal / Mobile App"] -->|Text or Audio| A["Flask API + Web UI"]
 
-    A --> LS["Language Selector\\nEnglish / Kiswahili"]
+  A --> LS["Language Selector
+English / Kiswahili"]
 
-    A -->|Audio Input| W["Groq Whisper API\\nSpeech-to-Text"]
-    W -->|Transcribed Text| Q["User Query Text"]
+  A -->|Audio Input| W["Groq Whisper API
+Speech-to-Text"]
+  W -->|Transcribed Text| Q["User Query Text"]
 
-    A -->|Text Query| Q
+  A -->|Text Query| Q
 
-    Q -->|If Kiswahili| T["Groq LLaMA (small)\\nTranslate SW -> EN\\n(retrieval-only)"]
-    Q -->|If English| RQ["Retrieval Query (EN)"]
-    T --> RQ
+  Q -->|If Kiswahili| T["Groq LLaMA (small)
+Translate SW -> EN
+(retrieval-only)"]
+  Q -->|If English| RQ["Retrieval Query (EN)"]
+  T --> RQ
 
-    RQ --> R["Hybrid Retrieval Engine"]
-    R --> S["Semantic Search\\nVector Embeddings"]
-    R --> K["Keyword Search\\nTF-IDF Index"]
-    S --> H["Hybrid Scoring & Ranking"]
-    K --> H
+  RQ --> R["Hybrid Retrieval Engine"]
+  R --> S["Semantic Search
+Vector Embeddings"]
+  R --> K["Keyword Search
+TF-IDF Index"]
+  S --> H["Hybrid Scoring & Ranking"]
+  K --> H
 
-    H -->|Top-K KB Chunks| L["LLaMA via Groq API\\nGrounded Answer"]
-    LS -->|Selected language| L
+  H -->|Top-K KB Chunks| L["LLaMA via Groq API
+Grounded Answer"]
+  LS -->|Selected language| L
 
-    L -->|Answer (EN or SW)| A
-    A -->|UI / JSON| UI["Web UI / Embedded Chat Widget"]
-
+  L -->|Answer (EN or SW)| A
+  A -->|UI / JSON| UI["Web UI / Embedded Chat Widget"]
 ```
 
 ### Architectural notes
