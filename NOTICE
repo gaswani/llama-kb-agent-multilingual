@@ -1,0 +1,20 @@
+NOTICE
+
+This project integrates third-party AI services and models, including
+large language models from the LLaMA family served via the Groq API.
+
+Use of these models and services is subject to the respective terms,
+policies, and acceptable use guidelines of their providers, including
+but not limited to:
+
+- Groq API Terms of Service
+- Meta LLaMA model license and acceptable use policy
+
+This software does not redistribute model weights. All model inference
+is performed via externally hosted APIs. Users of this software are
+responsible for ensuring their usage complies with all applicable
+third-party licenses, usage restrictions, and local regulations.
+
+The authors and copyright holders of this software make no representations
+or warranties regarding third-party services and are not liable for any
+violations arising from misuse of such services.

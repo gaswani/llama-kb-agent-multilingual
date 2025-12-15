@@ -1,0 +1,221 @@
+<!--Copyright (c) 2025 Gideon Aswani / Pathways Technologies Ltd-->
+<!--Licensed under the MIT License. See LICENSE file for details.-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Document AI Agent</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">AI</div>
+        <div class="titles">
+          <div class="title">Document AI Agent</div>
+          <div class="subtitle">Answers strictly from your uploaded knowledge base</div>
+        </div>
+      </div>
+      <div class="status">
+        <span class="pill" id="kb-pill">KB: {{ active_kb if active_kb else "None loaded" }}</span>
+        <select class="select" id="lang" title="Language">
+          <option value="en">English</option>
+          <option value="sw">Kiswahili</option>
+        </select>
+        <button class="btn btn-ghost" id="btn-loc">Use my location</button>
+        <button class="btn btn-ghost" id="btn-clear">Clear chat</button>
+      </div>
+    </header>
+
+    <main class="card">
+      <div class="messages" id="messages">
+        <div class="msg assistant">
+          <div class="bubble">
+            Hello! 👋 Ask me something about the Digital Hubs- Implementation Status. You can type or record a short voice message.
+          </div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="input-wrap">
+          <input id="text" type="text" placeholder="Type your message..." autocomplete="off" />
+        </div>
+
+        <div class="actions">
+          <button class="btn" id="btn-send">Send</button>
+          <button class="btn btn-secondary" id="btn-record" title="Record voice">🎤 Record</button>
+        </div>
+        <div class="hint" id="hint"></div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <span>Endpoints: <code>/upload_kb</code>, <code>/chat_text</code>, <code>/chat</code>, <code>/kb/list</code>, <code>/kb/load</code></span>
+    </footer>
+  </div>
+
+<script>
+(function(){
+  const messages = document.getElementById('messages');
+  const input = document.getElementById('text');
+  const btnSend = document.getElementById('btn-send');
+  const btnRecord = document.getElementById('btn-record');
+  const btnClear = document.getElementById('btn-clear');
+  const hint = document.getElementById('hint');
+  const kbPill = document.getElementById('kb-pill');
+  const langSel = document.getElementById('lang');
+  const btnLoc = document.getElementById('btn-loc');
+
+  // default language from server (if provided)
+  try{ langSel.value = '{{ default_language|default("en") }}'; }catch(e){}
+
+  let geo = null;
+
+
+  function addMsg(role, text){
+    const wrap = document.createElement('div');
+    wrap.className = 'msg ' + role;
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = text;
+    wrap.appendChild(bubble);
+    messages.appendChild(wrap);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function setHint(text){ hint.textContent = text || ''; }
+
+  async function sendText(){
+    const text = (input.value || '').trim();
+    if(!text) return;
+    addMsg('user', text);
+    input.value = '';
+    setHint('Thinking…');
+
+    try{
+      const res = await fetch('/chat_text', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({message: text, language: (langSel && langSel.value) || 'en', geo: geo})
+      });
+      const data = await res.json();
+      if(!res.ok){
+        addMsg('assistant', data.error || 'Error');
+      } else {
+        addMsg('assistant', data.answer || 'No answer.');
+        if(data.active_kb){
+          kbPill.textContent = 'KB: ' + data.active_kb;
+        }
+      }
+    }catch(e){
+      addMsg('assistant', 'Error contacting server.');
+    } finally {
+      setHint('');
+    }
+  }
+
+  btnSend.addEventListener('click', sendText);
+  input.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') sendText(); });
+
+  btnLoc.addEventListener('click', async ()=>{
+    if(!navigator.geolocation){
+      setHint('Geolocation not supported in this browser.');
+      return;
+    }
+    setHint('Requesting location permission…');
+    navigator.geolocation.getCurrentPosition(async (pos)=>{
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+      try{
+        const res = await fetch('/geo/reverse', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({lat, lon})});
+        const data = await res.json();
+        geo = data && data.ok ? data : {ok:true, lat, lon};
+        setHint('Location enabled.');
+      }catch(e){
+        geo = {ok:true, lat, lon};
+        setHint('Location enabled (no reverse lookup).');
+      }
+    }, (err)=>{
+      setHint('Location permission denied.');
+    }, {enableHighAccuracy:false, timeout:8000});
+  });
+
+  btnClear.addEventListener('click', ()=>{
+    messages.innerHTML = '';
+    addMsg('assistant', 'Chat cleared. Ask me something new.');
+  });
+
+  let recorder = null;
+  let chunks = [];
+  let recording = false;
+
+  async function startRecording(){
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      addMsg('assistant', 'Audio recording is not supported in this browser.');
+      return;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    recorder = new MediaRecorder(stream);
+    chunks = [];
+    recorder.ondataavailable = (e)=>{ if(e.data.size>0) chunks.push(e.data); };
+    recorder.onstop = async ()=>{
+      const blob = new Blob(chunks, {type:'audio/webm'});
+      const form = new FormData();
+      form.append('audio', blob, 'recording.webm');
+      addMsg('user', '[Voice message sent]');
+      setHint('Transcribing & answering…');
+      try{
+        const res = await fetch('/chat', {method:'POST', body: form});
+        const data = await res.json();
+        if(!res.ok){
+          addMsg('assistant', data.error || 'Error');
+        } else {
+          if(data.query){
+            addMsg('assistant', 'Heard: “' + data.query + '”');
+          }
+          addMsg('assistant', data.answer || 'No answer.');
+          if(data.active_kb){
+            kbPill.textContent = 'KB: ' + data.active_kb;
+          }
+        }
+      }catch(e){
+        addMsg('assistant', 'Error contacting server.');
+      } finally {
+        setHint('');
+      }
+    };
+    recorder.start();
+    recording = true;
+    btnRecord.textContent = '⏹ Stop';
+    btnRecord.classList.add('recording');
+    setHint('Recording… click Stop when done.');
+  }
+
+  function stopRecording(){
+    if(recorder && recording){
+      recorder.stop();
+      recording = false;
+      btnRecord.textContent = '🎤 Record';
+      btnRecord.classList.remove('recording');
+      setHint('Processing audio…');
+    }
+  }
+
+  btnRecord.addEventListener('click', async ()=>{
+    try{
+      if(!recording) await startRecording();
+      else stopRecording();
+    }catch(e){
+      addMsg('assistant', 'Could not start recording. Check microphone permissions.');
+      btnRecord.textContent = '🎤 Record';
+      btnRecord.classList.remove('recording');
+      setHint('');
+    }
+  });
+
+})();
+</script>
+</body>
+</html>

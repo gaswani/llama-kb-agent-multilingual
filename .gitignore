@@ -1,0 +1,77 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python version files
+.python-version
+
+# =========================
+# Environment variables
+# =========================
+.env
+
+# =========================
+# Knowledge Base storage
+# =========================
+kb_store/
+__blobstorage__/
+
+# =========================
+# Azurite / Local Azure Emulator
+# =========================
+__azurite_db_blob__.json
+__azurite_db_blob_extent__.json
+
+# =========================
+# OS / Editor files
+# =========================
+.DS_Store
+.DS_Store?
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# =========================
+# Logs & temp files
+# =========================
+*.log
+*.tmp
+*.bak
+
+# =========================
+# Audio test files (optional)
+# =========================
+*.wav
+*.m4a
+*.mp3
+
+# =========================
+# Large / generated artifacts
+# =========================
+*.npy
+*.npz
+*.pickle
+*.pkl
+
+# =========================
+# Security / secrets
+# =========================
+*.key
+*.pem

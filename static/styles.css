@@ -1,0 +1,203 @@
+/* Copyright (c) 2025 Gideon Aswani / Pathways Technologies Ltd
+/* Licensed under the MIT License. See LICENSE file for details.
+
+/* Minimal, modern chat UI */
+:root{
+  --bg:#0b1220;
+  --muted:#93a4b8;
+  --text:#eaf2ff;
+  --accent:#4aa3ff;
+  --accent2:#22c55e;
+  --border:rgba(255,255,255,0.08);
+  --shadow: 0 18px 60px rgba(0,0,0,0.35);
+  --radius:18px;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  background: radial-gradient(1200px 600px at 20% 0%, rgba(74,163,255,0.25), transparent 45%),
+              radial-gradient(900px 450px at 80% 0%, rgba(34,197,94,0.18), transparent 55%),
+              var(--bg);
+  color:var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+}
+
+.page{
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 22px;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+
+.topbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  padding: 12px 14px;
+  background: rgba(255,255,255,0.04);
+  border:1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+}
+
+.brand{display:flex;align-items:center;gap:12px}
+.logo{
+  width:42px;height:42px;border-radius:14px;
+  display:grid;place-items:center;
+  background: linear-gradient(135deg, rgba(74,163,255,0.9), rgba(34,197,94,0.85));
+  color:#00131f;
+  font-weight:900;
+}
+.titles .title{font-weight:800;letter-spacing:0.2px}
+.titles .subtitle{font-size:12px;color:var(--muted);margin-top:2px}
+
+.status{display:flex;align-items:center;gap:10px}
+.pill{
+  font-size:12px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.05);
+  border:1px solid var(--border);
+  color: var(--muted);
+}
+
+.card{
+  background: rgba(255,255,255,0.04);
+  border:1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  min-height: 70vh;
+}
+
+.messages{
+  padding: 14px;
+  overflow:auto;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  flex:1;
+}
+
+.msg{display:flex}
+.msg.user{justify-content:flex-end}
+.msg.assistant{justify-content:flex-start}
+
+.bubble{
+  max-width: 78%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border:1px solid var(--border);
+  background: rgba(255,255,255,0.05);
+  color: var(--text);
+  line-height:1.35;
+  white-space:pre-wrap;
+}
+
+.msg.user .bubble{
+  background: rgba(74,163,255,0.18);
+  border-color: rgba(74,163,255,0.35);
+}
+
+.msg.assistant .bubble{
+  background: rgba(255,255,255,0.04);
+}
+
+.composer{
+  border-top: 1px solid var(--border);
+  padding: 12px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  background: rgba(0,0,0,0.16);
+}
+
+.input-wrap{
+  display:flex;
+  gap:10px;
+}
+
+input[type="text"]{
+  width:100%;
+  padding: 12px 12px;
+  border-radius: 14px;
+  border:1px solid var(--border);
+  background: rgba(255,255,255,0.05);
+  color: var(--text);
+  outline:none;
+}
+
+input[type="text"]::placeholder{color: rgba(147,164,184,0.8)}
+
+.actions{
+  display:flex;
+  gap:10px;
+  justify-content:flex-end;
+}
+
+.btn{
+  cursor:pointer;
+  border:none;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(74,163,255,0.9);
+  color:#00131f;
+  font-weight:800;
+  transition: transform .08s ease, filter .2s ease;
+}
+.btn:hover{filter:brightness(1.05)}
+.btn:active{transform:scale(0.98)}
+
+.btn-secondary{
+  background: rgba(34,197,94,0.9);
+}
+.btn-ghost{
+  background: rgba(255,255,255,0.05);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn.recording{
+  background: rgba(239,68,68,0.95);
+  color: #fff;
+}
+
+.hint{
+  font-size: 12px;
+  color: var(--muted);
+  min-height: 16px;
+}
+
+.footer{
+  color: var(--muted);
+  font-size: 12px;
+  text-align:center;
+  padding: 6px 0 0;
+}
+
+code{
+  background: rgba(255,255,255,0.06);
+  border:1px solid var(--border);
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+
+/* Language selector */
+.select{
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 10px;
+  outline: none;
+}
+.select option{ color:#111; }

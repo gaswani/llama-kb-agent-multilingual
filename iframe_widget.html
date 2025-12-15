@@ -1,0 +1,104 @@
+<!-- ===== AI Agent Widget (bottom-right) ===== -->
+<style>
+  :root { --ai-z: 999999; }
+
+  #ai-launcher{
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    width: 56px;
+    height: 56px;
+    border: 0;
+    border-radius: 18px;
+    cursor: pointer;
+    z-index: var(--ai-z);
+    box-shadow: 0 18px 60px rgba(0,0,0,0.35);
+    background: linear-gradient(135deg, rgba(74,163,255,0.95), rgba(34,197,94,0.9));
+    color: #00131f;
+    font-weight: 900;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  }
+
+  #ai-panel{
+    position: fixed;
+    right: 18px;
+    bottom: 86px;
+    width: min(420px, calc(100vw - 36px));
+    height: min(640px, calc(100vh - 120px));
+    border-radius: 18px;
+    overflow: hidden;
+    background: rgba(15, 26, 43, 0.85);
+    box-shadow: 0 18px 60px rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.10);
+    z-index: var(--ai-z);
+    display: none;
+  }
+
+  #ai-panel.open{ display: block; }
+
+  #ai-header{
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 10px 0 12px;
+    background: rgba(0,0,0,0.25);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    color: #eaf2ff;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    font-size: 13px;
+  }
+
+  #ai-close{
+    border: 0;
+    background: transparent;
+    color: #eaf2ff;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 6px 10px;
+    border-radius: 10px;
+  }
+
+  #ai-close:hover{ background: rgba(255,255,255,0.08); }
+
+  #ai-frame{
+    width: 100%;
+    height: calc(100% - 44px);
+    border: 0;
+    background: transparent;
+  }
+</style>
+
+<button id="ai-launcher" aria-label="Open AI assistant">AI</button>
+
+<div id="ai-panel" role="dialog" aria-label="AI assistant">
+  <div id="ai-header">
+    <div>AI Assistant</div>
+    <button id="ai-close" aria-label="Close">×</button>
+  </div>
+  <!-- IMPORTANT: Set this to your Flask agent base URL -->
+  <iframe id="ai-frame" src="https://YOUR_AGENT_DOMAIN_OR_IP/" loading="lazy"></iframe>
+</div>
+
+<script>
+  (function(){
+    const launcher = document.getElementById('ai-launcher');
+    const panel = document.getElementById('ai-panel');
+    const closeBtn = document.getElementById('ai-close');
+
+    function openPanel(){ panel.classList.add('open'); }
+    function closePanel(){ panel.classList.remove('open'); }
+
+    launcher.addEventListener('click', () => {
+      panel.classList.contains('open') ? closePanel() : openPanel();
+    });
+    closeBtn.addEventListener('click', closePanel);
+
+    // Optional: ESC to close
+    document.addEventListener('keydown', (e) => {
+      if(e.key === 'Escape') closePanel();
+    });
+  })();
+</script>
+<!-- ===== end widget ===== -->
