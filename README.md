@@ -68,36 +68,31 @@ To fix that, the agent performs:
 
 ```mermaid
 flowchart LR
-    U[User / Portal / Mobile App] -->|Text or Audio| A[Flask API + Web UI]
+    U["User / Portal / Mobile App"] -->|Text or Audio| A["Flask API + Web UI"]
 
-    %% Language selection / routing
-    A --> LS[Language Selector<br/>(English / Kiswahili)]
+    A --> LS["Language Selector\\nEnglish / Kiswahili"]
 
-    %% Audio transcription
-    A -->|Audio Input| W[Groq Whisper API<br/>Speech-to-Text]
-    W -->|Transcribed Text| Q[User Query Text]
+    A -->|Audio Input| W["Groq Whisper API\\nSpeech-to-Text"]
+    W -->|Transcribed Text| Q["User Query Text"]
 
-    %% Text path
-    A -->|Text Query| Q[User Query Text]
+    A -->|Text Query| Q
 
-    %% Translation (retrieval-only)
-    Q -->|If Kiswahili| T[Groq LLaMA (small)<br/>Translate SW → EN<br/>(retrieval-only)]
-    Q -->|If English| RQ[Retrieval Query (EN)]
-    T --> RQ[Retrieval Query (EN)]
+    Q -->|If Kiswahili| T["Groq LLaMA (small)\\nTranslate SW -> EN\\n(retrieval-only)"]
+    Q -->|If English| RQ["Retrieval Query (EN)"]
+    T --> RQ
 
-    %% Hybrid retrieval
-    RQ --> R[Hybrid Retrieval Engine]
-    R --> S[Semantic Search<br/>Vector Embeddings]
-    R --> K[Keyword Search<br/>TF-IDF Index]
-    S --> H[Hybrid Scoring & Ranking]
-    K --> H[Hybrid Scoring & Ranking]
+    RQ --> R["Hybrid Retrieval Engine"]
+    R --> S["Semantic Search\\nVector Embeddings"]
+    R --> K["Keyword Search\\nTF-IDF Index"]
+    S --> H["Hybrid Scoring & Ranking"]
+    K --> H
 
-    %% LLM answer generation
-    H -->|Top-K KB Chunks| L[LLaMA Model via Groq API<br/>Grounded Answer]
+    H -->|Top-K KB Chunks| L["LLaMA via Groq API\\nGrounded Answer"]
     LS -->|Selected language| L
 
     L -->|Answer (EN or SW)| A
-    A -->|UI / JSON| UI[Web UI / Embedded Chat Widget]
+    A -->|UI / JSON| UI["Web UI / Embedded Chat Widget"]
+
 ```
 
 ### Architectural notes
