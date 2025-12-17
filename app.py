@@ -57,9 +57,60 @@ HYBRID_THRESHOLD = float(os.getenv("HYBRID_THRESHOLD", "0.35"))  # score floor f
 # Language & Location support
 # =========================
 SUPPORTED_LANGUAGES = {"en": "English", "sw": "Kiswahili"}
+
+# Default language used when the client/UI does not send a language (or sends an unknown value).
+# NOTE: We default to English to avoid surprising "SW" responses when a client forgets the field.
 DEFAULT_LANGUAGE = os.getenv("DEFAULT_LANGUAGE", "en").strip().lower()
 if DEFAULT_LANGUAGE not in SUPPORTED_LANGUAGES:
     DEFAULT_LANGUAGE = "en"
+
+def normalize_language(lang: str) -> str:
+    """Normalize language coming from UI / curl / forms.
+
+    Accepts: 'en', 'sw', 'english', 'kiswahili', 'swahili', etc.
+    Returns a supported language code ('en' or 'sw').
+    """
+    v = (lang or DEFAULT_LANGUAGE).strip().lower()
+    if v in ("kiswahili", "swahili", "sw"):
+        return "sw"
+    if v in ("english", "en"):
+        return "en"
+    # Sometimes a UI sends labels like "English" / "Kiswahili" or other variants.
+    if "swah" in v or "kisw" in v:
+        return "sw"
+    if "eng" in v:
+        return "en"
+    return DEFAULT_LANGUAGE
+
+def normalize_language(lang: str) -> str:
+    """
+    Normalizes language labels coming from UI / curl into internal codes.
+    Returns "en" or "sw" (fallbacks to DEFAULT_LANGUAGE).
+    """
+    if not lang:
+        return DEFAULT_LANGUAGE
+
+    lang = str(lang).strip().lower()
+
+    # Common UI values / synonyms
+    mapping = {
+        "english": "en",
+        "en": "en",
+        "en-us": "en",
+        "en_gb": "en",
+        "kiswahili": "sw",
+        "swahili": "sw",
+        "sw": "sw",
+    }
+
+    lang = mapping.get(lang, lang)
+
+    # Final guard
+    if lang not in SUPPORTED_LANGUAGES:
+        return DEFAULT_LANGUAGE
+
+    return lang
+
 
 # Reverse geocoding (best-effort) for "near me" queries.
 # Requires outbound internet access to Nominatim; if unavailable, app degrades gracefully.
@@ -589,6 +640,39 @@ def auto_load_kb_on_startup() -> None:
     if versions:
         load_kb_from_disk(versions[0])
 
+# =========================
+# Reverse geocoding helper
+# =========================
+PROXIMITY_TERMS = [
+    "closest", "nearest", "near me", "around me",
+    "closest to me", "nearest to me"
+]
+
+def is_proximity_query(text: str) -> bool:
+    t = (text or "").lower()
+    return any(p in t for p in PROXIMITY_TERMS)
+
+def build_location_hint(geo: dict) -> str:
+    parts = []
+    for k in ["city", "county", "state", "country"]:
+        v = geo.get(k)
+        if v:
+            parts.append(v)
+    return ", ".join(parts)
+
+def rewrite_query_with_geo(user_query: str, geo: dict | None) -> str:
+    if not geo:
+        return user_query
+
+    location_hint = build_location_hint(geo)
+
+    # Rewrite proximity queries safely (KB has no distances)
+    if is_proximity_query(user_query):
+        return f"List digital hubs in {location_hint}"
+
+    # Otherwise bias retrieval only
+    return f"{user_query}. User location: {location_hint}"
+
 
 # =========================
 # Flask app
@@ -601,16 +685,29 @@ from typing import Any, Dict
 
 def location_hint_from_geo(geo: Dict[str, Any]) -> str:
     """
-    Convert a reverse-geocode payload into a short text hint used by retrieval + prompting.
-    Expected geo shape (best effort):
-      { ok: True, county: "...", state: "...", city: "...", ... }
+    Convert a (reverse-)geocode payload into a short text hint used by retrieval + prompting.
+
+    We support two shapes:
+      1) Reverse geocode result (preferred): { ok: True, county/state/city/display_name/... }
+      2) Raw browser geo: { lat: ..., lon: ... }  -> we will reverse geocode (if enabled)
     """
     if not geo or not isinstance(geo, dict):
         return ""
 
-    # If UI didn’t reverse geocode, you might only have lat/lon; still return something.
+    # If UI sent only lat/lon, try to reverse geocode here (best-effort).
     if geo.get("ok") is not True:
-        return ""
+        lat = geo.get("lat")
+        lon = geo.get("lon")
+        if lat is not None and lon is not None:
+            try:
+                resolved = reverse_geocode(float(lat), float(lon))
+                if isinstance(resolved, dict) and resolved.get("ok") is True:
+                    geo = resolved
+            except Exception:
+                # Never crash the chat flow because reverse geocoding failed
+                return ""
+        else:
+            return ""
 
     parts = []
     if geo.get("county"):
@@ -623,6 +720,49 @@ def location_hint_from_geo(geo: Dict[str, Any]) -> str:
         parts.append(str(geo["display_name"]))
 
     return "; ".join(parts)
+
+def rewrite_location_aware_query(raw_message: str, retrieval_query_en: str, geo: Dict[str, Any]) -> str:
+    """
+    Location-aware retrieval helper (KB-grounded).
+
+    - If user asks "closest/nearest/near me" (or Kiswahili equivalents), we cannot compute true distance
+      because the KB is typically a table without hub coordinates. Instead, we *rewrite* the retrieval
+      intent to: "List hubs in <county/state/city>".
+    - Otherwise, we simply append a short location hint to improve matching.
+
+    This affects retrieval ONLY. The user's original question is still used in the final answer prompt.
+    """
+    if not geo or not isinstance(geo, dict):
+        return retrieval_query_en
+
+    # geo may be raw {lat,lon} or resolved {ok:True,...}. We rely on location_hint_from_geo to resolve.
+    hint = location_hint_from_geo(geo)
+    if not hint:
+        return retrieval_query_en
+
+    raw = (raw_message or "").lower()
+    q = (retrieval_query_en or "").lower()
+
+    near_en = [
+        "closest", "nearest", "near me", "around me", "nearby",
+        "in my location", "in my current location", "close to me"
+    ]
+    near_sw = [
+        "karibu", "jirani", "karibu na mimi", "karibu kwangu",
+        "eneo langu", "mahali nilipo", "kwangu"
+    ]
+
+    # Choose a human location label (best effort)
+    loc = geo.get("county") or geo.get("state") or geo.get("city")
+    if any(p in q for p in near_en) or any(p in raw for p in near_sw):
+        if loc:
+            return f"List digital hubs in {loc}. {retrieval_query_en}"
+        # Fallback: at least bias retrieval with the hint
+        return f"{retrieval_query_en} (User location: {hint})"
+
+    # Not a "nearest" style question: just bias retrieval slightly with the location hint
+    return f"{retrieval_query_en} (User location: {hint})"
+
 
 @app.route("/", methods=["GET"])
 def ui():
@@ -737,13 +877,9 @@ def retrieve_context(query: str) -> Tuple[List[str], List[float], Dict[str, Any]
 def chat_text():
     data = request.get_json(silent=True) or {}
     message = (data.get("message") or "").strip()
-    language = (data.get('language') or DEFAULT_LANGUAGE).strip().lower()
-    # Normalize common UI labels
-    if language in ("kiswahili", "swahili"):
-        language = "sw"
-    if language not in SUPPORTED_LANGUAGES:
-        language = DEFAULT_LANGUAGE
+    language = normalize_language(data.get('language') or DEFAULT_LANGUAGE)
     geo = data.get('geo') or {}
+    # geo may be raw {lat, lon} or an already reverse-geocoded payload
     location_hint = location_hint_from_geo(geo) if isinstance(geo, dict) else ""
     if not message:
         return jsonify({"error": "Message cannot be empty."}), 400
@@ -755,6 +891,8 @@ def chat_text():
     try:
         # If user selected Kiswahili, translate the query to English for retrieval ONLY.
         retrieval_query = translate_sw_to_en(message) if language == "sw" else message
+        # Location-aware rewrite for retrieval (keeps answers KB-grounded)
+        retrieval_query = rewrite_location_aware_query(message, retrieval_query, geo) if isinstance(geo, dict) else retrieval_query
         context_chunks, scores, dbg = retrieve_context(retrieval_query)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -771,7 +909,23 @@ def chat_text():
             "debug": dbg,
         })
 
-    answer = call_llama(message, context_chunks, language=language, location_hint=location_hint)
+    # Use the *location-aware* question for the LLM too (prevents "closest" contradictions)
+    #effective_question = rewrite_location_aware_query(message, message, geo) if isinstance(geo, dict) else message
+
+    # Use the same location-aware rewrite for the LLM question
+    effective_question = rewrite_location_aware_query(
+        message,
+        message,   # IMPORTANT: pass message again, not retrieval_query
+        geo
+    ) if isinstance(geo, dict) else message
+
+    answer = call_llama(
+        effective_question,
+        context_chunks,
+        language=language,
+        location_hint=location_hint
+    )
+
     return jsonify({"answer": answer, "query": message, "used_audio": False, "active_kb": kb_id_active, "top_scores": scores, "top_snippets": context_chunks, "debug": dbg})
 
 
@@ -781,12 +935,7 @@ def chat():
     query = ""
 
     audio_file = request.files.get("audio")
-    language = (request.form.get('language') or DEFAULT_LANGUAGE).strip().lower()
-    # Normalize common UI labels
-    if language in ("kiswahili", "swahili"):
-        language = "sw"
-    if language not in SUPPORTED_LANGUAGES:
-        language = DEFAULT_LANGUAGE
+    language = normalize_language(request.form.get('language') or DEFAULT_LANGUAGE)
     geo_raw = request.form.get('geo')
     geo = {}
     if geo_raw:
@@ -813,6 +962,8 @@ def chat():
     try:
         # If user selected Kiswahili, translate the query to English for retrieval ONLY.
         retrieval_query = translate_sw_to_en(query) if language == "sw" else query
+        # Location-aware rewrite for retrieval (keeps answers KB-grounded)
+        retrieval_query = rewrite_location_aware_query(query, retrieval_query, geo) if isinstance(geo, dict) else retrieval_query
         context_chunks, scores, dbg = retrieve_context(retrieval_query)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -829,7 +980,26 @@ def chat():
             "debug": dbg,
         })
 
-    answer = call_llama(query, context_chunks, language=language, location_hint=location_hint)
+    # Use the *location-aware* question for the LLM too (prevents "closest" contradictions)
+    #effective_question = rewrite_location_aware_query(query, query, geo) if isinstance(geo, dict) else query
+    
+    # Use the same location-aware rewrite for the LLM question
+    effective_question = rewrite_location_aware_query(
+        query,
+        query,
+        geo
+    ) if isinstance(geo, dict) else query
+
+    answer = call_llama(
+        effective_question,
+        context_chunks,
+        language=language,
+        location_hint=location_hint
+    )
+
+
+    #answer = call_llama(effective_question, context_chunks, language=language, location_hint=location_hint)
+
     return jsonify({"answer": answer, "query": query, "used_audio": used_audio, "active_kb": kb_id_active, "top_scores": scores, "top_snippets": context_chunks, "debug": dbg})
 
 
@@ -859,17 +1029,102 @@ OPENAPI_SPEC: Dict[str, Any] = {
 }
 
 
+# -----------------------------
+# Location helpers (Reverse Geocoding)
+# -----------------------------
+# The browser can provide lat/lon (with user permission). To turn coordinates into something
+# human-friendly (e.g., county/city/region), we call a reverse-geocoding service.
+#
+# Default: OpenStreetMap Nominatim. For production/government deployments, you may want
+# to route this through your own geocoding service or disable it entirely.
+#
+# Controlled by .env:
+#   ENABLE_REVERSE_GEOCODE=1|0
+#   NOMINATIM_URL=https://nominatim.openstreetmap.org/reverse
+#   REVERSE_GEOCODE_UA="llama-kb-agent/1.0 (contact: you@org.com)"
+#
+ENABLE_REVERSE_GEOCODE = os.getenv("ENABLE_REVERSE_GEOCODE", "1").strip() not in ("0", "false", "False", "no", "NO")
+NOMINATIM_URL = os.getenv("NOMINATIM_URL", "https://nominatim.openstreetmap.org/reverse").strip()
+# Prefer REVERSE_GEOCODE_UA, but fall back to NOMINATIM_USER_AGENT if provided
+REVERSE_GEOCODE_UA = (os.getenv("REVERSE_GEOCODE_UA") or os.getenv("NOMINATIM_USER_AGENT") or "llama-kb-agent/1.0").strip()
 
-@app.route("/geo/reverse", methods=["POST"])
+def reverse_geocode(lat: float, lon: float) -> Dict[str, Any]:
+    """
+    Reverse-geocode coordinates into a lightweight location object.
+    Returns JSON like:
+      {"ok": true, "lat": ..., "lon": ..., "country": ..., "county": ..., "city": ..., "display_name": ...}
+    """
+    if not ENABLE_REVERSE_GEOCODE:
+        return {"ok": False, "disabled": True, "lat": lat, "lon": lon}
+
+    try:
+        params = {
+            "format": "jsonv2",
+            "lat": str(lat),
+            "lon": str(lon),
+            "zoom": "10",
+            "addressdetails": "1",
+        }
+        headers = {
+            # Nominatim requires a valid User-Agent per their usage policy.
+            "User-Agent": REVERSE_GEOCODE_UA,
+            "Accept": "application/json",
+        }
+        r = requests.get(NOMINATIM_URL, params=params, headers=headers, timeout=10)
+        r.raise_for_status()
+        data = r.json() or {}
+        addr = data.get("address") or {}
+
+        # Normalize a few common fields (best-effort)
+        return {
+            "ok": True,
+            "lat": lat,
+            "lon": lon,
+            "display_name": data.get("display_name"),
+            "country": addr.get("country"),
+            "country_code": addr.get("country_code"),
+            "state": addr.get("state") or addr.get("region"),
+            "county": addr.get("county"),
+            "city": addr.get("city") or addr.get("town") or addr.get("village"),
+            "suburb": addr.get("suburb") or addr.get("neighbourhood"),
+            "raw": data,  # keep raw payload for debugging (you can remove for production)
+        }
+    except Exception as e:
+        return {"ok": False, "lat": lat, "lon": lon, "error": str(e)}
+
+@app.route("/geo/reverse", methods=["POST", "GET", "OPTIONS"])
 def geo_reverse():
+    """
+    Reverse-geocode a lat/lon and return a normalized payload the UI can rely on.
+
+    Why this exists:
+    - The "Use my location" button in the UI calls this endpoint.
+    - Some browsers / proxies may send GET (query params) or POST (JSON).
+    - We return a stable shape including `ok` and a short human message.
+    """
+    # Accept either POST JSON or GET query-string
     data = request.get_json(silent=True) or {}
+    if request.method == "GET":
+        data = dict(request.args)  # lat/lon can come from query params
+
     try:
         lat = float(data.get("lat"))
         lon = float(data.get("lon"))
     except Exception:
-        return jsonify({"error": "lat and lon are required (numbers)."}), 400
+        return jsonify({"ok": False, "error": "lat and lon are required (numbers)."}), 400
 
     geo = reverse_geocode(lat, lon)
+
+    # Ensure a consistent message for the UI toast / status line
+    if isinstance(geo, dict):
+        label = geo.get("display_name") or geo.get("city") or geo.get("county") or geo.get("state") or geo.get("country")
+        if geo.get("ok") and label:
+            geo["message"] = f"Location enabled: {label}"
+        elif geo.get("ok"):
+            geo["message"] = "Location enabled."
+        else:
+            # In case reverse geocoding is disabled or fails, still provide a helpful message
+            geo.setdefault("message", "Location received, but could not be resolved to a place name.")
     return jsonify(geo), 200
 
 @app.route("/openapi.json", methods=["GET"])
